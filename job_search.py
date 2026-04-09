@@ -17,7 +17,7 @@ GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 RECIPIENT_EMAIL = "harshjoshi.3077@gmail.com"
 
 KEYWORDS = ["Data Scientist", "Machine Learning Engineer", "AI Engineer"]
-LOCATION = "Deutschland"
+LOCATION = "Germany"
 
 
 # --- Fetch Jobs ---
