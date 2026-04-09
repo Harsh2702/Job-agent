@@ -28,9 +28,11 @@ def search_jobs(keyword, location):
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
     }
     params = {
-        "query": f"{keyword} in {location}",
-        "num_pages": "1",
-    }
+    "query": f"{keyword} in {location}",
+    "num_pages": "1",
+    "country": "de",
+    "language": "en",
+}
     response = requests.get(url, headers=headers, params=params, timeout=30)
     print(f"Status code: {response.status_code}")
     print(f"Raw response: {response.text[:1000]}")
