@@ -17,18 +17,17 @@ GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 RECIPIENT_EMAIL = "harshjoshi.3077@gmail.com"
 
 KEYWORDS = ["Data Scientist", "Machine Learning Engineer", "AI Engineer"]
-LOCATION = "Germany"
 
 
 # --- Fetch Jobs ---
-def search_jobs(keyword, location):
+def search_jobs(keyword):
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
     }
     params = {
-    "query": f"{keyword} in {location}",
+    "query": keyword,
     "num_pages": "1",
     "country": "de",
     "language": "en",
@@ -45,9 +44,9 @@ def fetch_all_jobs():
     all_jobs = []
 
     for keyword in KEYWORDS:
-        print(f"Searching: {keyword} in {LOCATION}")
+        print(f"Searching: {keyword}")
         try:
-            jobs = search_jobs(keyword, LOCATION)
+            jobs = search_jobs(keyword)
         except Exception as e:
             print(f"Error fetching {keyword}: {e}")
             continue
