@@ -30,9 +30,10 @@ def search_jobs(keyword, location):
     params = {
         "query": f"{keyword} in {location}",
         "num_pages": "1",
-       # "date_posted": "3days",
     }
     response = requests.get(url, headers=headers, params=params, timeout=30)
+    print(f"Status code: {response.status_code}")
+    print(f"Raw response: {response.text[:1000]}")
     response.raise_for_status()
     return response.json().get("data", [])
 
