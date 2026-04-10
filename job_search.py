@@ -11,32 +11,32 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 # --- Config ---
-RAPIDAPI_KEY = os.environ["RAPIDAPI_KEY"]
+ADZUNA_APP_ID = os.environ["ADZUNA_APP_ID"]
+ADZUNA_APP_KEY = os.environ["ADZUNA_APP_KEY"]
 GMAIL_USER = os.environ["GMAIL_USER"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 RECIPIENT_EMAIL = "harshjoshi.3077@gmail.com"
 
 KEYWORDS = ["Data Scientist", "Machine Learning Engineer", "AI Engineer"]
+LOCATION = "germany"
 
 
 # --- Fetch Jobs ---
 def search_jobs(keyword):
-    url = "https://jsearch.p.rapidapi.com/search"
-    headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
-    }
+    url = f"https://api.adzuna.com/v1/api/jobs/de/search/1"
     params = {
-    "query": keyword,
-    "num_pages": "1",
-    "country": "de",
-    "language": "en",
-}
-    response = requests.get(url, headers=headers, params=params, timeout=30)
-    print(f"Status code: {response.status_code}")
-    print(f"Raw response: {response.text[:1000]}")
+        "app_id": ADZUNA_APP_ID,
+        "app_key": ADZUNA_APP_KEY,
+        "what": keyword,
+        "results_per_page": 20,
+        "max_days_old": 3,
+        "content-type": "application/json",
+    }
+    response = requests.get(url, params=params, timeout=30)
+    print(f"Status code for '{keyword}': {response.status_code}")
+    print(f"Raw response snippet: {response.text[:300]}")
     response.raise_for_status()
-    return response.json().get("data", [])
+    return response.json().get("results", [])
 
 
 def fetch_all_jobs():
@@ -48,26 +48,27 @@ def fetch_all_jobs():
         try:
             jobs = search_jobs(keyword)
         except Exception as e:
-            print(f"Error fetching {keyword}: {e}")
+            print(f"Error fetching '{keyword}': {e}")
             continue
 
         for job in jobs:
-            job_id = job.get("job_id")
+            job_id = job.get("id")
             if job_id in seen_ids:
                 continue
             seen_ids.add(job_id)
 
-            city = job.get("job_city") or ""
-            country = job.get("job_country") or ""
-            location_str = ", ".join(filter(None, [city, country]))
+            location_str = job.get("location", {}).get("display_name", "")
+            company = job.get("company", {}).get("display_name", "")
+            date_raw = job.get("created", "")
+            date_str = date_raw[:10] if date_raw else ""
 
             all_jobs.append({
-                "Job Title": job.get("job_title", ""),
-                "Company": job.get("employer_name", ""),
+                "Job Title": job.get("title", ""),
+                "Company": company,
                 "Location": location_str,
-                "Date Posted": (job.get("job_posted_at_datetime_utc") or "")[:10],
-                "Source": job.get("job_publisher", ""),
-                "Apply Link": job.get("job_apply_link", ""),
+                "Date Posted": date_str,
+                "Source": "Adzuna / Germany",
+                "Apply Link": job.get("redirect_url", ""),
                 "Keyword Match": keyword,
             })
 
@@ -82,7 +83,6 @@ def create_excel(jobs):
 
     headers = ["Job Title", "Company", "Location", "Date Posted", "Source", "Apply Link", "Keyword Match"]
 
-    # Header style
     header_fill = PatternFill("solid", start_color="1F4E79")
     header_font = Font(bold=True, color="FFFFFF", name="Arial", size=11)
 
@@ -92,7 +92,6 @@ def create_excel(jobs):
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Row style
     row_font = Font(name="Arial", size=10)
     alt_fill = PatternFill("solid", start_color="D9E1F2")
 
@@ -105,7 +104,6 @@ def create_excel(jobs):
             if fill:
                 cell.fill = fill
 
-    # Make Apply Link clickable
     for row_idx, job in enumerate(jobs, 2):
         link = job.get("Apply Link", "")
         cell = ws.cell(row=row_idx, column=6)
@@ -114,8 +112,7 @@ def create_excel(jobs):
             cell.value = "Apply Here"
             cell.font = Font(name="Arial", size=10, color="0563C1", underline="single")
 
-    # Column widths
-    col_widths = [40, 30, 25, 15, 15, 15, 25]
+    col_widths = [40, 30, 25, 15, 20, 15, 25]
     for col, width in enumerate(col_widths, 1):
         ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = width
 
@@ -139,7 +136,7 @@ def send_email(filename, job_count):
 
     body = f"""Hi Harsh,
 
-Here are today's job listings for {LOCATION}.
+Here are today's job listings for Germany.
 
 Total unique jobs found: {job_count}
 Keywords searched: {", ".join(KEYWORDS)}
@@ -165,7 +162,6 @@ Good luck!
     print("Email sent successfully.")
 
 
-# --- No jobs fallback email ---
 def send_no_jobs_email():
     msg = MIMEMultipart()
     msg["From"] = GMAIL_USER
