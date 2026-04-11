@@ -29,7 +29,7 @@ def search_jobs(keyword):
         "app_key": ADZUNA_APP_KEY,
         "what": keyword,
         "results_per_page": 20,
-        "max_days_old": 3,
+        "max_days_old": 1,
         "content-type": "application/json",
     }
     response = requests.get(url, params=params, timeout=30)
