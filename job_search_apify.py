@@ -75,8 +75,7 @@ def normalize_job(raw, platform, keyword):
         "Location":    None,
         "Posted At":   None,
         "Apply Link":  None,
-        "Salary":      None,
-        "Description": None,
+        
     }
 
     if platform == "LinkedIn":
@@ -85,8 +84,6 @@ def normalize_job(raw, platform, keyword):
         job["Location"]    = raw.get("location") or raw.get("jobLocation")
         job["Posted At"]   = raw.get("postedAt") or raw.get("datePosted")
         job["Apply Link"]  = raw.get("jobUrl") or raw.get("url")
-        job["Salary"]      = raw.get("salary")
-        job["Description"] = raw.get("description") or raw.get("jobDescription")
 
     elif platform == "Indeed":
         job["Title"]       = raw.get("positionName") or raw.get("title")
@@ -94,8 +91,6 @@ def normalize_job(raw, platform, keyword):
         job["Location"]    = raw.get("location")
         job["Posted At"]   = raw.get("postedAt") or raw.get("date")
         job["Apply Link"]  = raw.get("url") or raw.get("jobUrl")
-        job["Salary"]      = raw.get("salary") or raw.get("salaryText")
-        job["Description"] = raw.get("description") or raw.get("jobDescription")
 
     elif platform == "StepStone":
         job["Title"]       = raw.get("jobTitle") or raw.get("title")
@@ -103,8 +98,6 @@ def normalize_job(raw, platform, keyword):
         job["Location"]    = raw.get("location") or raw.get("jobLocation")
         job["Posted At"]   = raw.get("postedAt") or raw.get("datePosted")
         job["Apply Link"]  = raw.get("jobUrl") or raw.get("url")
-        job["Salary"]      = raw.get("salary") or raw.get("salaryRange")
-        job["Description"] = raw.get("description")
 
     elif platform == "Xing":
         job["Title"]       = raw.get("title") or raw.get("jobTitle")
@@ -112,8 +105,6 @@ def normalize_job(raw, platform, keyword):
         job["Location"]    = raw.get("location") or raw.get("city")
         job["Posted At"]   = raw.get("publishedAt") or raw.get("postedAt")
         job["Apply Link"]  = raw.get("url") or raw.get("jobUrl")
-        job["Salary"]      = raw.get("salary")
-        job["Description"] = raw.get("description")
 
     return job
 
