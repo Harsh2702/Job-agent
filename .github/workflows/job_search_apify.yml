@@ -1,4 +1,4 @@
-name: Daily Job Search
+name: Daily Job Search Apify
 
 on:
   schedule:
