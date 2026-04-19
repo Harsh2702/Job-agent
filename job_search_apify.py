@@ -12,19 +12,20 @@ from urllib.parse import quote_plus
 from apify_client import ApifyClient
 
 # -----------------------------------------------
-# CONFIG - edit these to match your search
+# CONFIG
 # -----------------------------------------------
 KEYWORDS = ["Data Scientist", "Machine Learning Engineer", "AI Engineer"]
 LOCATION = "Germany"
 
-# These come from GitHub Secrets
 APIFY_TOKEN        = os.environ["APIFY_TOKEN"]
 GMAIL_USER         = os.environ["GMAIL_USER"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 
-# If RECIPIENT_EMAIL secret is not set, fall back to GMAIL_USER
 _recipient = os.environ.get("RECIPIENT_EMAIL", "").strip()
 RECIPIENT_EMAIL = _recipient if _recipient else GMAIL_USER
+
+# columns to keep in the final Excel (in this order)
+KEEP_COLUMNS = ["Platform", "Keyword", "Title", "Company", "Location", "Posted At", "Apply Link"]
 
 # -----------------------------------------------
 # ACTOR IDs
@@ -37,9 +38,8 @@ ACTORS = {
 }
 
 # -----------------------------------------------
-# BUILD LINKEDIN URL
-# LinkedIn requires a full search URL, not raw keywords.
-# f_TPR=r86400 = posted in last 24 hours (86400 seconds)
+# BUILD LINKEDIN SEARCH URL
+# f_TPR=r86400 = posted in last 24 hours
 # -----------------------------------------------
 def build_linkedin_url(keyword, location):
     kw  = quote_plus(keyword)
@@ -47,7 +47,7 @@ def build_linkedin_url(keyword, location):
     return f"https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_TPR=r86400&position=1&pageNum=0"
 
 # -----------------------------------------------
-# ACTOR INPUTS - correct field names per schema
+# ACTOR INPUTS
 # -----------------------------------------------
 def get_actor_input(platform, keyword, location):
     if platform == "LinkedIn":
@@ -59,9 +59,9 @@ def get_actor_input(platform, keyword, location):
         return {
             "title":      keyword,
             "location":   location,
-            "country":    "de",         # Germany
+            "country":    "de",
             "limit":      20,
-            "datePosted": "1",          # last 1 day
+            "datePosted": "1",
         }
     elif platform == "StepStone":
         return {
@@ -71,72 +71,76 @@ def get_actor_input(platform, keyword, location):
         }
     elif platform == "Xing":
         return {
-            "keyword":        keyword,  # note: singular, not "keywords"
+            "keyword":        keyword,
             "location":       location,
             "results_wanted": 20,
         }
 
 # -----------------------------------------------
-# NORMALIZE raw fields to a common structure
+# NORMALIZE
+# LinkedIn job URL is built from the job ID because
+# the actor does not return a direct URL field.
 # -----------------------------------------------
+def get_linkedin_url(raw):
+    for field in ["jobUrl", "url", "applyUrl", "applyLink", "link", "jobLink", "externalApplyLink"]:
+        val = raw.get(field)
+        if val and isinstance(val, str) and val.startswith("http"):
+            return val
+    # fallback: construct from job ID
+    job_id = raw.get("id") or raw.get("jobId") or raw.get("entityUrn")
+    if job_id:
+        if isinstance(job_id, str) and ":" in job_id:
+            job_id = job_id.split(":")[-1]
+        return f"https://www.linkedin.com/jobs/view/{job_id}"
+    return None
+
 def normalize_job(raw, platform, keyword):
     job = {
-        "Platform":    platform,
-        "Keyword":     keyword,
-        "Title":       None,
-        "Company":     None,
-        "Location":    None,
-        "Posted At":   None,
-        "Apply Link":  None,
-        "Salary":      None,
-        "Description": None,
+        "Platform":   platform,
+        "Keyword":    keyword,
+        "Title":      None,
+        "Company":    None,
+        "Location":   None,
+        "Posted At":  None,
+        "Apply Link": None,
     }
 
     if platform == "LinkedIn":
-        job["Title"]       = raw.get("title") or raw.get("jobTitle")
-        job["Company"]     = raw.get("company") or raw.get("companyName")
-        job["Location"]    = raw.get("location") or raw.get("jobLocation")
-        job["Posted At"]   = raw.get("postedAt") or raw.get("datePosted")
-        job["Apply Link"]  = raw.get("jobUrl") or raw.get("url")
-        job["Salary"]      = raw.get("salary")
-        job["Description"] = raw.get("description") or raw.get("jobDescription")
+        job["Title"]      = raw.get("title") or raw.get("jobTitle")
+        job["Company"]    = raw.get("company") or raw.get("companyName")
+        job["Location"]   = raw.get("location") or raw.get("jobLocation")
+        job["Posted At"]  = raw.get("postedAt") or raw.get("datePosted")
+        job["Apply Link"] = get_linkedin_url(raw)
 
     elif platform == "Indeed":
-        job["Title"]       = raw.get("positionName") or raw.get("title")
-        job["Company"]     = raw.get("company")
-        job["Location"]    = raw.get("location")
-        job["Posted At"]   = raw.get("postedAt") or raw.get("date")
-        job["Apply Link"]  = raw.get("url") or raw.get("jobUrl")
-        job["Salary"]      = raw.get("salary") or raw.get("salaryText")
-        job["Description"] = raw.get("description") or raw.get("jobDescription")
+        job["Title"]      = raw.get("positionName") or raw.get("title")
+        job["Company"]    = raw.get("company")
+        job["Location"]   = raw.get("location")
+        job["Posted At"]  = raw.get("postedAt") or raw.get("date")
+        job["Apply Link"] = raw.get("url") or raw.get("jobUrl")
 
     elif platform == "StepStone":
-        job["Title"]       = raw.get("jobTitle") or raw.get("title")
-        job["Company"]     = raw.get("companyName") or raw.get("company")
-        job["Location"]    = raw.get("location") or raw.get("jobLocation")
-        job["Posted At"]   = raw.get("postedAt") or raw.get("datePosted")
-        job["Apply Link"]  = raw.get("jobUrl") or raw.get("url")
-        job["Salary"]      = raw.get("salary") or raw.get("salaryRange")
-        job["Description"] = raw.get("description")
+        job["Title"]      = raw.get("jobTitle") or raw.get("title")
+        job["Company"]    = raw.get("companyName") or raw.get("company")
+        job["Location"]   = raw.get("location") or raw.get("jobLocation")
+        job["Posted At"]  = raw.get("postedAt") or raw.get("datePosted")
+        job["Apply Link"] = raw.get("jobUrl") or raw.get("url")
 
     elif platform == "Xing":
-        job["Title"]       = raw.get("title") or raw.get("jobTitle")
-        job["Company"]     = raw.get("companyName") or raw.get("company")
-        job["Location"]    = raw.get("location") or raw.get("city")
-        job["Posted At"]   = raw.get("publishedAt") or raw.get("postedAt")
-        job["Apply Link"]  = raw.get("url") or raw.get("jobUrl")
-        job["Salary"]      = raw.get("salary")
-        job["Description"] = raw.get("description")
+        job["Title"]      = raw.get("title") or raw.get("jobTitle")
+        job["Company"]    = raw.get("companyName") or raw.get("company")
+        job["Location"]   = raw.get("location") or raw.get("city")
+        job["Posted At"]  = raw.get("publishedAt") or raw.get("postedAt")
+        job["Apply Link"] = raw.get("url") or raw.get("jobUrl")
 
     return job
 
 # -----------------------------------------------
-# FILTER - keep only jobs posted in last 24 hours
+# FILTER - last 24 hours
 # -----------------------------------------------
 def is_within_24h(posted_at_str):
     if not posted_at_str:
         return True
-
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     formats = [
         "%Y-%m-%dT%H:%M:%S.%fZ",
@@ -145,7 +149,6 @@ def is_within_24h(posted_at_str):
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d",
     ]
-
     for fmt in formats:
         try:
             dt = datetime.strptime(str(posted_at_str), fmt)
@@ -154,11 +157,10 @@ def is_within_24h(posted_at_str):
             return dt >= cutoff
         except ValueError:
             continue
-
     return True
 
 # -----------------------------------------------
-# FETCH JOBS from all platforms and all keywords
+# FETCH JOBS
 # -----------------------------------------------
 def fetch_all_jobs():
     client   = ApifyClient(APIFY_TOKEN)
@@ -167,25 +169,19 @@ def fetch_all_jobs():
     for keyword in KEYWORDS:
         for platform, actor_id in ACTORS.items():
             print(f"Running {platform} for keyword: {keyword}")
-
             try:
-                actor_input = get_actor_input(platform, keyword, LOCATION)
-                run         = client.actor(actor_id).call(run_input=actor_input)
+                run        = client.actor(actor_id).call(run_input=get_actor_input(platform, keyword, LOCATION))
                 time.sleep(2)
-
                 dataset_id = run.get("defaultDatasetId")
                 if not dataset_id:
                     print(f"  No dataset returned, skipping.")
                     continue
-
                 items = list(client.dataset(dataset_id).iterate_items())
                 print(f"  Got {len(items)} raw results")
-
                 for raw in items:
                     job = normalize_job(raw, platform, keyword)
                     if is_within_24h(job["Posted At"]):
                         all_jobs.append(job)
-
             except Exception as e:
                 print(f"  Error: {e}")
                 continue
@@ -195,63 +191,86 @@ def fetch_all_jobs():
 
     df = pd.DataFrame(all_jobs)
 
-    # some actors return dicts or lists inside fields - flatten everything to strings
     for col in df.columns:
         df[col] = df[col].apply(lambda x: str(x) if isinstance(x, (dict, list)) else x)
 
     df = df.drop_duplicates(subset=["Title", "Company", "Location"])
     df = df.reset_index(drop=True)
 
-    # keep top 20 per platform across all keywords combined
     df = df.groupby("Platform", group_keys=False).head(20)
     df = df.reset_index(drop=True)
-
-    df["Scraped At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return df
 
 # -----------------------------------------------
-# BUILD EXCEL FILE in memory
+# BUILD EXCEL
+# - only KEEP_COLUMNS
+# - Apply Link shows "Apply" as a clickable hyperlink
+# - minimal fixed column widths
+# - header row frozen
 # -----------------------------------------------
 def build_excel(df):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    df = df[[c for c in KEEP_COLUMNS if c in df.columns]]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Jobs"
+
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    header_font = Font(name="Arial", color="FFFFFF", bold=True, size=10)
+    link_font   = Font(name="Arial", color="0563C1", underline="single", size=10)
+    body_font   = Font(name="Arial", size=10)
+
+    for col_idx, col_name in enumerate(df.columns, 1):
+        cell           = ws.cell(row=1, column=col_idx, value=col_name)
+        cell.fill      = header_fill
+        cell.font      = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    link_col_idx = list(df.columns).index("Apply Link") + 1 if "Apply Link" in df.columns else None
+
+    for row_idx, row in enumerate(df.itertuples(index=False), 2):
+        for col_idx, value in enumerate(row, 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if col_idx == link_col_idx and value and str(value).startswith("http"):
+                cell.value     = "Apply"
+                cell.hyperlink = str(value)
+                cell.font      = link_font
+            else:
+                cell.value = value if value and str(value) not in ("None", "nan") else ""
+                cell.font  = body_font
+            cell.alignment = Alignment(vertical="center")
+
+    col_widths = {
+        "Platform":   12,
+        "Keyword":    22,
+        "Title":      40,
+        "Company":    22,
+        "Location":   18,
+        "Posted At":  18,
+        "Apply Link": 10,
+    }
+    for col_idx, col_name in enumerate(df.columns, 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = col_widths.get(col_name, 15)
+
+    ws.freeze_panes = "A2"
+
     output = BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Jobs")
-
-        workbook  = writer.book
-        worksheet = writer.sheets["Jobs"]
-
-        from openpyxl.styles import Font, PatternFill, Alignment
-        from openpyxl.utils import get_column_letter
-
-        header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
-
-        for col_num, col_name in enumerate(df.columns, 1):
-            cell = worksheet.cell(row=1, column=col_num)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
-
-        for col_num, col_name in enumerate(df.columns, 1):
-            col_values = df[col_name].fillna("").astype(str).apply(len)
-            max_len = max(int(col_values.max()), len(col_name))
-            col_letter = get_column_letter(col_num)
-            worksheet.column_dimensions[col_letter].width = min(max_len + 4, 60)
-
+    wb.save(output)
     output.seek(0)
     return output
 
 # -----------------------------------------------
-# SEND EMAIL with Excel attachment
+# SEND EMAIL
 # -----------------------------------------------
 def send_email(df, excel_bytes):
-    today    = datetime.now().strftime("%Y-%m-%d")
-    total    = len(df)
-    platforms = df["Platform"].value_counts().to_dict()
-
-    platform_summary = "\n".join([f"  - {k}: {v} jobs" for k, v in platforms.items()])
+    today            = datetime.now().strftime("%Y-%m-%d")
+    total            = len(df)
+    platform_summary = "\n".join([f"  - {k}: {v} jobs" for k, v in df["Platform"].value_counts().items()])
 
     body = f"""Hi,
 
@@ -270,28 +289,22 @@ The full list with apply links is attached as an Excel file.
 Good luck with your search!
 """
 
-    msg = MIMEMultipart()
+    msg            = MIMEMultipart()
     msg["From"]    = GMAIL_USER
     msg["To"]      = RECIPIENT_EMAIL
     msg["Subject"] = f"Daily Jobs - {today} ({total} listings)"
-
     msg.attach(MIMEText(body, "plain"))
 
     part = MIMEBase("application", "octet-stream")
     part.set_payload(excel_bytes.read())
     encoders.encode_base64(part)
-    part.add_header(
-        "Content-Disposition",
-        f"attachment; filename=jobs_{today}.xlsx"
-    )
+    part.add_header("Content-Disposition", f"attachment; filename=jobs_{today}.xlsx")
     msg.attach(part)
 
     print(f"Sending email to: {RECIPIENT_EMAIL}")
-
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_USER, RECIPIENT_EMAIL, msg.as_string())
-
     print("Email sent successfully.")
 
 # -----------------------------------------------
@@ -310,8 +323,6 @@ if __name__ == "__main__":
     else:
         print(f"\nTotal jobs found: {len(df)}")
         print(df["Platform"].value_counts().to_string())
-
         excel = build_excel(df)
         send_email(df, excel)
-
         print("Done!")
