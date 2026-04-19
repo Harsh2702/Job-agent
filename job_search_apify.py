@@ -194,6 +194,11 @@ def fetch_all_jobs():
         return pd.DataFrame()
 
     df = pd.DataFrame(all_jobs)
+
+    # some actors return dicts or lists inside fields - flatten everything to strings
+    for col in df.columns:
+        df[col] = df[col].apply(lambda x: str(x) if isinstance(x, (dict, list)) else x)
+
     df = df.drop_duplicates(subset=["Title", "Company", "Location"])
     df = df.reset_index(drop=True)
     df["Scraped At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
