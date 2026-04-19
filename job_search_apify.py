@@ -53,27 +53,27 @@ def get_actor_input(platform, keyword, location):
     if platform == "LinkedIn":
         return {
             "urls":  [build_linkedin_url(keyword, location)],
-            "count": 50,
+            "count": 20,
         }
     elif platform == "Indeed":
         return {
             "title":      keyword,
             "location":   location,
             "country":    "de",         # Germany
-            "limit":      50,
+            "limit":      20,
             "datePosted": "1",          # last 1 day
         }
     elif platform == "StepStone":
         return {
             "searchKeywords": keyword,
             "location":       location,
-            "maxResults":     50,
+            "maxResults":     20,
         }
     elif platform == "Xing":
         return {
             "keyword":        keyword,  # note: singular, not "keywords"
             "location":       location,
-            "results_wanted": 50,
+            "results_wanted": 20,
         }
 
 # -----------------------------------------------
@@ -201,6 +201,11 @@ def fetch_all_jobs():
 
     df = df.drop_duplicates(subset=["Title", "Company", "Location"])
     df = df.reset_index(drop=True)
+
+    # keep top 20 per platform across all keywords combined
+    df = df.groupby("Platform", group_keys=False).head(20)
+    df = df.reset_index(drop=True)
+
     df["Scraped At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return df
