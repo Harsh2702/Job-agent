@@ -231,7 +231,7 @@ def build_excel(df):
 
         for col_num, col_name in enumerate(df.columns, 1):
             max_len = max(
-                df[col_name].astype(str).apply(len).max(),
+                df[col_name].fillna("").astype(str).apply(len),
                 len(col_name)
             )
             col_letter = get_column_letter(col_num)
