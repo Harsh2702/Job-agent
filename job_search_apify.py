@@ -230,10 +230,8 @@ def build_excel(df):
             cell.alignment = Alignment(horizontal="center")
 
         for col_num, col_name in enumerate(df.columns, 1):
-            max_len = max(
-                df[col_name].fillna("").astype(str).apply(len),
-                len(col_name)
-            )
+            col_values = df[col_name].fillna("").astype(str).apply(len)
+            max_len = max(int(col_values.max()), len(col_name))
             col_letter = get_column_letter(col_num)
             worksheet.column_dimensions[col_letter].width = min(max_len + 4, 60)
 
