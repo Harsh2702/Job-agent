@@ -1,8 +1,8 @@
 name: Daily Job Search
 
 on:
-  schedule:
-    - cron: '0 5 * * 1-6'  # 7am CEST = 5am UTC, Monday to Saturday (~23 days/month)
+  #schedule:
+  #  - cron: '0 5 * * 1-6'  # 7am CEST = 5am UTC, Monday to Saturday (~23 days/month)
   workflow_dispatch:        # lets you trigger it manually anytime from GitHub
 
 jobs:
