@@ -238,10 +238,10 @@ def fetch_all_jobs():
     df = df.drop_duplicates(subset=["Title", "Company", "Location"])
     df = df.reset_index(drop=True)
 
-    df = df.groupby("Platform", group_keys=False).apply(
-        lambda x: x.head(LIMITS.get(x.name, 20))
-    )
-    df = df.reset_index(drop=True)
+    df = pd.concat([
+        grp.head(LIMITS.get(platform, 20))
+        for platform, grp in df.groupby("Platform", sort=False)
+    ]).reset_index(drop=True)
 
     return df
 
