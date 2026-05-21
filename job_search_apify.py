@@ -210,7 +210,10 @@ def fetch_all_jobs():
             try:
                 run        = client.actor(actor_id).call(run_input=get_actor_input(platform, keyword, LOCATION))
                 time.sleep(2)
-                dataset_id = run.get("defaultDatasetId")
+                dataset_id = (
+                    getattr(run, "default_dataset_id", None)
+                    or (run.get("defaultDatasetId") if isinstance(run, dict) else None)
+                )
                 if not dataset_id:
                     print(f"  No dataset returned, skipping.")
                     continue
