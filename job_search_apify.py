@@ -18,6 +18,9 @@ from apify_client import ApifyClient
 KEYWORDS = ["Data Scientist", "Machine Learning Engineer", "AI Engineer"]
 LOCATION = "India"
 
+# Single combined query sent to each actor (1 run per platform instead of 3)
+SEARCH_QUERY = " ".join(KEYWORDS)
+
 APIFY_TOKEN        = os.environ["APIFY_TOKEN"]
 GMAIL_USER         = os.environ["GMAIL_USER"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
@@ -162,6 +165,40 @@ def normalize_job(raw, platform, keyword):
     return job
 
 # -----------------------------------------------
+# KEYWORD INFERENCE
+# Labels each job with the most relevant target keyword
+# based on its title (used when all keywords are searched
+# in a single combined actor run).
+# -----------------------------------------------
+_KW_PATTERNS = {
+    "Data Scientist": re.compile(
+        r"\b(data scien|data analyst|data engineer|data mining|statistician|"
+        r"predictive model|quantitative analyst)\b",
+        re.IGNORECASE,
+    ),
+    "Machine Learning Engineer": re.compile(
+        r"\b(machine learning|deep learning|ml engineer|neural network|"
+        r"reinforcement learning|research scientist|applied scientist)\b",
+        re.IGNORECASE,
+    ),
+    "AI Engineer": re.compile(
+        r"\b(ai engineer|ai developer|ai researcher|ai specialist|"
+        r"artificial intelligence|llm|large language|generative ai|gen ai|"
+        r"computer vision|natural language|nlp|recommendation system)\b",
+        re.IGNORECASE,
+    ),
+}
+
+def infer_keyword(title):
+    """Return the most relevant KEYWORDS entry for the given job title."""
+    if not title or str(title).strip() in ("", "None", "nan"):
+        return KEYWORDS[0]
+    for kw, pattern in _KW_PATTERNS.items():
+        if pattern.search(str(title)):
+            return kw
+    return KEYWORDS[0]
+
+# -----------------------------------------------
 # FILTER - title relevance
 # Drops jobs whose titles have nothing to do with
 # Data Science / ML / AI (scrapers sometimes ignore
@@ -236,31 +273,33 @@ def fetch_all_jobs():
     client   = ApifyClient(APIFY_TOKEN)
     all_jobs = []
 
-    for keyword in KEYWORDS:
-        for platform, actor_id in ACTORS.items():
-            print(f"Running {platform} for keyword: {keyword}")
-            try:
-                run        = client.actor(actor_id).call(run_input=get_actor_input(platform, keyword, LOCATION))
-                time.sleep(2)
-                dataset_id = (
-                    getattr(run, "default_dataset_id", None)
-                    or (run.get("defaultDatasetId") if isinstance(run, dict) else None)
-                )
-                if not dataset_id:
-                    print(f"  No dataset returned, skipping.")
-                    continue
-                items = list(client.dataset(dataset_id).iterate_items())
-                print(f"  Got {len(items)} raw results")
-                kept = 0
-                for raw in items:
-                    job = normalize_job(raw, platform, keyword)
-                    if is_within_7d(job["Posted At"]) and is_relevant_title(job["Title"]):
-                        all_jobs.append(job)
-                        kept += 1
-                print(f"  Kept {kept} relevant results")
-            except Exception as e:
-                print(f"  Error: {e}")
+    # One actor run per platform (combined query) instead of one per keyword —
+    # reduces API calls from 15 → 5 per execution.
+    for platform, actor_id in ACTORS.items():
+        print(f"Running {platform}")
+        try:
+            run        = client.actor(actor_id).call(run_input=get_actor_input(platform, SEARCH_QUERY, LOCATION))
+            time.sleep(2)
+            dataset_id = (
+                getattr(run, "default_dataset_id", None)
+                or (run.get("defaultDatasetId") if isinstance(run, dict) else None)
+            )
+            if not dataset_id:
+                print(f"  No dataset returned, skipping.")
                 continue
+            items = list(client.dataset(dataset_id).iterate_items())
+            print(f"  Got {len(items)} raw results")
+            kept = 0
+            for raw in items:
+                job = normalize_job(raw, platform, SEARCH_QUERY)
+                job["Keyword"] = infer_keyword(job["Title"])   # label by matched role
+                if is_within_7d(job["Posted At"]) and is_relevant_title(job["Title"]):
+                    all_jobs.append(job)
+                    kept += 1
+            print(f"  Kept {kept} relevant results")
+        except Exception as e:
+            print(f"  Error: {e}")
+            continue
 
     if not all_jobs:
         return pd.DataFrame()
