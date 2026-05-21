@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import smtplib
 import pandas as pd
@@ -15,7 +16,7 @@ from apify_client import ApifyClient
 # CONFIG
 # -----------------------------------------------
 KEYWORDS = ["Data Scientist", "Machine Learning Engineer", "AI Engineer"]
-LOCATION = "Germany"
+LOCATION = "India"
 
 APIFY_TOKEN        = os.environ["APIFY_TOKEN"]
 GMAIL_USER         = os.environ["GMAIL_USER"]
@@ -31,49 +32,67 @@ KEEP_COLUMNS = ["Platform", "Keyword", "Title", "Company", "Location", "Posted A
 # ACTOR IDs
 # -----------------------------------------------
 ACTORS = {
-    "LinkedIn":  "curious_coder/linkedin-jobs-scraper",
-    "Indeed":    "valig/indeed-jobs-scraper",
-    "StepStone": "easyapi/stepstone-jobs-scraper",
-    "Xing":      "shahidirfan/Xing-Jobs-Scraper",
+    "Naukri":   "memo23/naukri-scraper",
+    "LinkedIn": "valig/linkedin-jobs-scraper",
+    "Indeed":   "valig/indeed-jobs-scraper",
+    "Foundit":  "easyapi/foundit-jobs-scraper",
+    "Shine":    "easyapi/shine-com-jobs-scraper",
+}
+
+# Per-platform result limits
+LIMITS = {
+    "Naukri":   30,
+    "LinkedIn": 30,
+    "Indeed":   20,
+    "Foundit":  20,
+    "Shine":    20,
 }
 
 # -----------------------------------------------
 # BUILD LINKEDIN SEARCH URL
-# f_TPR=r86400 = posted in last 24 hours
+# f_TPR=r604800 = posted in last 7 days (604800 seconds)
 # -----------------------------------------------
 def build_linkedin_url(keyword, location):
     kw  = quote_plus(keyword)
     loc = quote_plus(location)
-    return f"https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_TPR=r86400&position=1&pageNum=0"
+    return f"https://www.linkedin.com/jobs/search/?keywords={kw}&location={loc}&f_TPR=r604800&position=1&pageNum=0"
 
 # -----------------------------------------------
 # ACTOR INPUTS
 # -----------------------------------------------
 def get_actor_input(platform, keyword, location):
-    if platform == "LinkedIn":
+    limit = LIMITS.get(platform, 20)
+
+    if platform == "Naukri":
+        return {
+            "keyword":  keyword,
+            "location": location,
+            "limit":    limit,
+        }
+    elif platform == "LinkedIn":
         return {
             "urls":  [build_linkedin_url(keyword, location)],
-            "count": 20,
+            "count": limit,
         }
     elif platform == "Indeed":
         return {
             "title":      keyword,
             "location":   location,
-            "country":    "de",
-            "limit":      20,
-            "datePosted": "1",
+            "country":    "in",
+            "limit":      limit,
+            "datePosted": "7",
         }
-    elif platform == "StepStone":
+    elif platform == "Foundit":
         return {
             "searchKeywords": keyword,
             "location":       location,
-            "maxResults":     20,
+            "maxResults":     limit,
         }
-    elif platform == "Xing":
+    elif platform == "Shine":
         return {
-            "keyword":        keyword,
+            "searchKeywords": keyword,
             "location":       location,
-            "results_wanted": 20,
+            "maxResults":     limit,
         }
 
 # -----------------------------------------------
@@ -105,7 +124,14 @@ def normalize_job(raw, platform, keyword):
         "Apply Link": None,
     }
 
-    if platform == "LinkedIn":
+    if platform == "Naukri":
+        job["Title"]      = raw.get("title") or raw.get("jobTitle")
+        job["Company"]    = raw.get("companyName") or raw.get("company")
+        job["Location"]   = raw.get("location") or raw.get("city")
+        job["Posted At"]  = raw.get("postedDate") or raw.get("datePosted") or raw.get("createdAt")
+        job["Apply Link"] = raw.get("jobUrl") or raw.get("url") or raw.get("applyLink")
+
+    elif platform == "LinkedIn":
         job["Title"]      = raw.get("title") or raw.get("jobTitle")
         job["Company"]    = raw.get("company") or raw.get("companyName")
         job["Location"]   = raw.get("location") or raw.get("jobLocation")
@@ -119,29 +145,41 @@ def normalize_job(raw, platform, keyword):
         job["Posted At"]  = raw.get("postedAt") or raw.get("date")
         job["Apply Link"] = raw.get("url") or raw.get("jobUrl")
 
-    elif platform == "StepStone":
+    elif platform == "Foundit":
         job["Title"]      = raw.get("jobTitle") or raw.get("title")
         job["Company"]    = raw.get("companyName") or raw.get("company")
-        job["Location"]   = raw.get("location") or raw.get("jobLocation")
-        job["Posted At"]  = raw.get("postedAt") or raw.get("datePosted")
+        job["Location"]   = raw.get("location") or raw.get("city")
+        job["Posted At"]  = raw.get("postedAt") or raw.get("datePosted") or raw.get("createdAt")
         job["Apply Link"] = raw.get("jobUrl") or raw.get("url")
 
-    elif platform == "Xing":
-        job["Title"]      = raw.get("title") or raw.get("jobTitle")
+    elif platform == "Shine":
+        job["Title"]      = raw.get("jobTitle") or raw.get("title")
         job["Company"]    = raw.get("companyName") or raw.get("company")
         job["Location"]   = raw.get("location") or raw.get("city")
-        job["Posted At"]  = raw.get("publishedAt") or raw.get("postedAt")
-        job["Apply Link"] = raw.get("url") or raw.get("jobUrl")
+        job["Posted At"]  = raw.get("postedAt") or raw.get("datePosted") or raw.get("createdAt")
+        job["Apply Link"] = raw.get("jobUrl") or raw.get("url")
 
     return job
 
 # -----------------------------------------------
-# FILTER - last 24 hours
+# FILTER - last 7 days
+# Also handles relative strings like "3 days ago", "1 week ago"
 # -----------------------------------------------
-def is_within_24h(posted_at_str):
+def is_within_7d(posted_at_str):
     if not posted_at_str:
         return True
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    s = str(posted_at_str).strip().lower()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+    # Handle relative strings returned by some scrapers
+    m = re.match(r"(\d+)\s*(minute|hour|day|week|month)s?\s*ago", s)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        delta = {"minute": timedelta(minutes=n), "hour": timedelta(hours=n),
+                 "day": timedelta(days=n), "week": timedelta(weeks=n),
+                 "month": timedelta(days=n * 30)}[unit]
+        return (datetime.now(timezone.utc) - delta) >= cutoff
+
     formats = [
         "%Y-%m-%dT%H:%M:%S.%fZ",
         "%Y-%m-%dT%H:%M:%SZ",
@@ -151,7 +189,7 @@ def is_within_24h(posted_at_str):
     ]
     for fmt in formats:
         try:
-            dt = datetime.strptime(str(posted_at_str), fmt)
+            dt = datetime.strptime(s, fmt)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt >= cutoff
@@ -180,7 +218,7 @@ def fetch_all_jobs():
                 print(f"  Got {len(items)} raw results")
                 for raw in items:
                     job = normalize_job(raw, platform, keyword)
-                    if is_within_24h(job["Posted At"]):
+                    if is_within_7d(job["Posted At"]):
                         all_jobs.append(job)
             except Exception as e:
                 print(f"  Error: {e}")
@@ -197,7 +235,9 @@ def fetch_all_jobs():
     df = df.drop_duplicates(subset=["Title", "Company", "Location"])
     df = df.reset_index(drop=True)
 
-    df = df.groupby("Platform", group_keys=False).head(20)
+    df = df.groupby("Platform", group_keys=False).apply(
+        lambda x: x.head(LIMITS.get(x.name, 20))
+    )
     df = df.reset_index(drop=True)
 
     return df
