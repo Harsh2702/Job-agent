@@ -162,6 +162,38 @@ def normalize_job(raw, platform, keyword):
     return job
 
 # -----------------------------------------------
+# FILTER - title relevance
+# Drops jobs whose titles have nothing to do with
+# Data Science / ML / AI (scrapers sometimes ignore
+# the keyword and return unrelated listings).
+# -----------------------------------------------
+_RELEVANT = re.compile(
+    r"\b("
+    r"data scien|data engineer|data analyst|data mining|"
+    r"machine learning|deep learning|reinforcement learning|"
+    r"artificial intelligence|"
+    r"natural language|nlp|"
+    r"computer vision|"
+    r"ml engineer|"
+    r"ai engineer|ai developer|ai researcher|ai specialist|"
+    r"generative ai|gen ai|"
+    r"llm|large language|"
+    r"neural network|"
+    r"predictive model|"
+    r"quantitative analyst|statistician|"
+    r"research scientist|applied scientist|"
+    r"recommendation system"
+    r")\b",
+    re.IGNORECASE,
+)
+
+def is_relevant_title(title):
+    """Return True if the job title is related to Data/ML/AI roles."""
+    if not title or str(title).strip() in ("", "None", "nan"):
+        return False
+    return bool(_RELEVANT.search(str(title)))
+
+# -----------------------------------------------
 # FILTER - last 7 days
 # Also handles relative strings like "3 days ago", "1 week ago"
 # -----------------------------------------------
@@ -219,10 +251,13 @@ def fetch_all_jobs():
                     continue
                 items = list(client.dataset(dataset_id).iterate_items())
                 print(f"  Got {len(items)} raw results")
+                kept = 0
                 for raw in items:
                     job = normalize_job(raw, platform, keyword)
-                    if is_within_7d(job["Posted At"]):
+                    if is_within_7d(job["Posted At"]) and is_relevant_title(job["Title"]):
                         all_jobs.append(job)
+                        kept += 1
+                print(f"  Kept {kept} relevant results")
             except Exception as e:
                 print(f"  Error: {e}")
                 continue
